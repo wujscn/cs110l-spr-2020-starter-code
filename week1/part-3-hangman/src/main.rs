@@ -37,4 +37,53 @@ fn main() {
     // println!("random word: {}", secret_word);
 
     // Your code here! :)
+    let n = secret_word.len();
+    println!("{}", "Welcome to CS110L Hangman!");
+    // I don't know how to do a better init.
+    let mut cur_word = Vec::new();
+    cur_word.resize(n, '-');
+    let mut guesses_his = String::new();
+    let mut chances = NUM_INCORRECT_GUESSES;
+    
+    while chances > 0 {
+        let cur_word_p : String = cur_word.iter().collect();
+        println!("The word so far is {}", cur_word_p);
+        println!("You have guessed the following letters: {}", guesses_his);
+        println!("You have {} guesses left", chances);
+        print!("Please guess a letter:");
+        io::stdout()
+            .flush()
+            .expect("Error flushing stdout.");
+        let mut guess = String::new();
+        io::stdin()
+            .read_line(&mut guess)
+            .expect("Error reading line."); 
+        let mut ok = false;
+        let c = guess.chars().nth(0).unwrap();
+        for i in 0..n {
+            if secret_word_chars[i] == c {
+                ok = true;
+                cur_word[i] = secret_word_chars[i];
+            }
+        }
+        guesses_his.push(c);
+        if !ok {
+            println!("Sorry, that letter is not in the word");
+            chances -= 1;
+        } else {
+            let mut succ = true;
+            for i in 0..n {
+                if cur_word[i] == '-' {
+                    succ = false;
+                    break;
+                }
+            }
+            if succ {
+                println!("Congratulations you guessed the secret word: {}!", secret_word);
+                return;
+            }
+        }
+        println!();
+    }
+    println!("Sorry, you ran out of guesses!");
 }
