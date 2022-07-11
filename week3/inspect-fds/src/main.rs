@@ -1,4 +1,6 @@
-use std::env;
+use std::{env, panic::panic_any};
+
+use crate::ps_utils::get_target;
 
 mod open_file;
 mod process;
@@ -10,11 +12,27 @@ fn main() {
         println!("Usage: {} <name or pid of target>", args[0]);
         std::process::exit(1);
     }
-    #[allow(unused)] // TODO: delete this line for Milestone 1
     let target = &args[1];
-
-    // TODO: Milestone 1: Get the target Process using psutils::get_target()
-    unimplemented!();
+    let proc_res = match get_target(target) {
+        Ok(ps) => ps,
+        Err(e) => {
+            eprintln!("Parsing Error: {}", e);
+            std::process::exit(1)
+        }
+    };
+    let proc = match proc_res {
+        Some(p) => {
+            println!("Found pid: {}", p.pid);
+            p
+        }
+        None => {
+            eprintln!("Target \"{}\" did not match any running PIDs or executables", target);
+            std::process::exit(1)
+        },
+    };
+    
+    
+    
 }
 
 #[cfg(test)]
@@ -30,6 +48,7 @@ mod test {
     #[test]
     fn test_exit_status_valid_target() {
         let mut subprocess = start_c_program("./multi_pipe_test");
+        // println!("Real pid {}", subprocess.id().to_string());
         assert_eq!(
             Command::new("./target/debug/inspect-fds")
                 .args(&[&subprocess.id().to_string()])
