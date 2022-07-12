@@ -42,7 +42,6 @@ impl Process {
     /// This function returns a list of (fdnumber, OpenFile) tuples, if file descriptor
     /// information is available (it returns None otherwise). The information is commonly
     /// unavailable if the process has already exited.
-    #[allow(unused)] // TODO: delete this line for Milestone 4
     pub fn list_open_files(&self) -> Option<Vec<(usize, OpenFile)>> {
         let mut open_files = vec![];
         for fd in self.list_fds()? {
@@ -53,10 +52,24 @@ impl Process {
 
     pub fn print(&self) {
         println!("========== \"{}\" (pid {}, ppid {}) ==========", self.command, self.pid, self.ppid);
-        print!("file descriptors: ");
-        if let Some(fds) = self.list_fds() {
-            for fd in fds {
-                print!("{} ", fd);
+        // print!("file descriptors: ");
+        match self.list_open_files() {
+            None => println!(
+                "Warning: could not inspect file descriptors for this process! \
+                    It might have exited just as we were about to look at its fd table, \
+                    or it might have exited a while ago and is waiting for the parent \
+                    to reap it."
+            ),
+            Some(open_files) => {
+                for (fd, file) in open_files {
+                    println!(
+                        "{:<4} {:<15} cursor: {:<4} {}",
+                        fd,
+                        format!("({})", file.access_mode),
+                        file.cursor,
+                        file.colorized_name(),
+                    );
+                }
             }
         }
         println!();
@@ -71,7 +84,9 @@ impl fmt::Display for Process {
 
 #[cfg(test)]
 mod test {
-    use crate::ps_utils;
+    use nix::libc::sleep;
+
+    use crate::{ps_utils, process::Process};
     use std::process::{Child, Command};
 
     fn start_c_program(program: &str) -> Child {
@@ -82,9 +97,19 @@ mod test {
 
     #[test]
     fn test_list_fds() {
-        //! I always got result like this : [0, 1, 2, 4, 5, 19, 20], maybe I did something wrong.
         let mut test_subprocess = start_c_program("./multi_pipe_test");
         let process = ps_utils::get_target("multi_pipe_test").unwrap().unwrap();
+        // ! I always got result like this : [0, 1, 2, 4, 5, 19, 20], maybe I did something wrong.
+        // ! update: when I test more, I found that in the runtime, it produce 4 processes but only 2 
+        // ! was expected to. It is also surprising that 2 of them had the correct fds, and other 2 
+        // ! had the extra "19" and "20". Maybe it is related to the wsl technically, I would test in
+        // ! real Linux envir soon.
+        // process.print();
+        // let pp = Process::new(process.ppid, 9, String::new());
+        // pp.print();
+        // use std::time::Duration;
+        // use std::thread::sleep;
+        // sleep(Duration::from_secs(20));
         assert_eq!(
             process
                 .list_fds()
@@ -92,7 +117,6 @@ mod test {
             vec![0, 1, 2, 4, 5],
             "Expected fds not correct"
         );
-        process.print();
         let _ = test_subprocess.kill();
     }
 

@@ -31,6 +31,13 @@ fn main() {
         },
     };
     proc.print();
+
+    let child_ps_opt = ps_utils::get_child_processes(proc.pid).ok();
+    if let Some(child_process) = child_ps_opt {
+        for p in child_process {
+            p.print()
+        }
+    }
     
 }
 
