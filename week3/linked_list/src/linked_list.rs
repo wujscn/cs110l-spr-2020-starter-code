@@ -71,5 +71,81 @@ impl<T> Drop for LinkedList<T> {
     }
 }
 
+impl<T> Clone for Node<T> where T: Clone {
+    fn clone(&self) -> Self {
+        Node::new(self.value.clone(), self.next.clone())
+    }
+}
 
+impl<T> Clone for LinkedList<T> where T: Clone {
+    fn clone(&self) -> Self {
+        let new_head = self.head.clone();
+        LinkedList { head: (new_head), size: (self.size) }
+    }
+}
+
+impl<T: PartialEq> PartialEq for LinkedList<T> {
+    fn eq(&self, other: &Self) -> bool {
+        if self.size == other.size {
+            let mut cur_a = self.head.as_ref();
+            let mut cur_b = other.head.as_ref();
+            while cur_a.is_some() && cur_b.is_some() {
+                if cur_a.unwrap().value != cur_b.unwrap().value {
+                    return false;
+                }
+                cur_a = cur_a.unwrap().next.as_ref();
+                cur_b = cur_b.unwrap().next.as_ref();
+            }
+            if cur_a.is_none() && cur_b.is_none() {
+                true
+            } else {
+                false
+            }
+        } else {
+            false
+        }
+    }
+}
+
+pub struct LinkedListIter<'a, T> {
+    current: &'a Option<Box<Node<T>>>,
+}
+
+impl<T> Iterator for LinkedListIter<'_, T> where T: Clone {
+    type Item = T;
+    fn next(&mut self) -> Option<T> {
+        match self.current {
+            Some(node) => {
+                let v = node.value.clone();
+                self.current = &node.next;
+                Some(v)
+            },
+            None => None
+        }
+    }
+}
+
+impl<'a, T> IntoIterator for &'a LinkedList<T> where T: Clone {
+    type Item = T;
+    type IntoIter = LinkedListIter<'a, T>;
+    fn into_iter(self) -> LinkedListIter<'a, T> {
+        LinkedListIter {current: &self.head}
+    }
+}
+
+pub trait ComputeNorm {
+    fn compute_norm(&self) -> f64 {
+        0.0     // default
+    }
+}
+
+impl ComputeNorm for LinkedList<f64> {
+    fn compute_norm(&self) -> f64 {
+        let mut rst : f64 = 0.0;
+        for v in self {
+            rst += v * v;
+        }
+        rst.sqrt()
+    }
+}
 
