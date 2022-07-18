@@ -57,8 +57,14 @@ impl Debugger {
                         let status = infer.cont_exec().unwrap();
                         match status {
                             Status::Exited(exit_code) => println!("Child exited (status {})", exit_code),
-                            Status::Stopped(signal, _) => {
+                            Status::Stopped(signal, rip) => {
                                 println!("Child stopped (signal {})", signal);
+                                match self.dwarf_data.get_line_from_addr(rip) {
+                                    Some(line) => {
+                                        println!("Stopped at {}:{}", line.file, line.number);
+                                    },
+                                    None => {}
+                                } 
                             },
                             Status::Signaled(_) => {
                                 // nothing
@@ -84,8 +90,14 @@ impl Debugger {
                     let status = infer.cont_exec().unwrap();
                     match status {
                         Status::Exited(exit_code) => println!("Child exited (status {})", exit_code),
-                        Status::Stopped(signal, _) => {
+                        Status::Stopped(signal, rip) => {
                             println!("Child stopped (signal {})", signal);
+                            match self.dwarf_data.get_line_from_addr(rip) {
+                                Some(line) => {
+                                    println!("Stopped at {}:{}", line.file, line.number);
+                                },
+                                None => {}
+                            }              
                         },
                         Status::Signaled(_) => {
                             // nothing
@@ -99,7 +111,10 @@ impl Debugger {
                         continue;
                     }
                     let infer = self.inferior.as_mut().unwrap();
-                    infer.print_backtrace(&self.dwarf_data);
+                    match infer.print_backtrace(&self.dwarf_data) {
+                        Ok(()) => {}
+                        Err(e) => println!("{}", e),
+                    }
                 }
             }
         }

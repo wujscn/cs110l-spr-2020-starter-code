@@ -107,7 +107,7 @@ impl Inferior {
         }
     }
 
-    ///
+    /// Printing a backtrace
     pub fn print_backtrace(&self, dwarf_data: &DwarfData) -> Result<(), nix::Error> {
         let regs = ptrace::getregs(self.pid())?;
         // println!("%rip register: {:#x}", regs.rip);
