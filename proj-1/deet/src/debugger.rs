@@ -34,15 +34,19 @@ impl Debugger {
             match self.get_next_command() {
                 DebuggerCommand::Run(args) => {
                     if let Some(inferior) = Inferior::new(&self.target, &args) {
+                        // Check existed inferior and kill it
+                        if self.inferior.is_some() {
+                            self.inferior.as_mut().unwrap().kill();
+                        }
                         // Create the inferior
                         self.inferior = Some(inferior);
                         // get a mutable reference
                         let infer = self.inferior.as_mut().unwrap();
-                        let status = infer.contExec().unwrap();
+                        let status = infer.cont_exec().unwrap();
                         match status {
                             Status::Exited(exit_code) => println!("Child exited (status {})", exit_code),
-                            Status::Stopped(signal, ins_ptr) => {
-                                println!("Signal {}, Stopped at #{}", signal, ins_ptr);
+                            Status::Stopped(signal, _) => {
+                                println!("Child stopped (signal {})", signal);
                             },
                             Status::Signaled(_) => {
                                 // nothing
@@ -53,7 +57,28 @@ impl Debugger {
                     }
                 }
                 DebuggerCommand::Quit => {
+                    if self.inferior.is_some() {
+                        self.inferior.as_mut().unwrap().kill();
+                    }
                     return;
+                }
+                DebuggerCommand::Continue => {
+                    // check valid inferior
+                    if self.inferior.is_none() {
+                        println!("The program is not being run.");
+                        continue;
+                    }
+                    let infer = self.inferior.as_mut().unwrap();
+                    let status = infer.cont_exec().unwrap();
+                    match status {
+                        Status::Exited(exit_code) => println!("Child exited (status {})", exit_code),
+                        Status::Stopped(signal, _) => {
+                            println!("Child stopped (signal {})", signal);
+                        },
+                        Status::Signaled(_) => {
+                            // nothing
+                        },
+                    };
                 }
             }
         }

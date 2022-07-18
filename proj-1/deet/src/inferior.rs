@@ -76,8 +76,31 @@ impl Inferior {
     }
 
     /// Restart the program after being stopped.
-    pub fn contExec(&self) -> Result<Status, nix::Error> {
+    pub fn cont_exec(&self) -> Result<Status, nix::Error> {
         ptrace::cont(self.pid(), None)?;
         self.wait(None)
+    }
+
+    /// Kill the existed process
+    pub fn kill(&mut self) {
+        match self.child.kill() {
+            Ok(()) => {
+                println!("Killing running inferior (pid {})", self.pid());
+                // reap
+                let rst = self.wait(None).unwrap();
+                match rst {
+                    Status::Signaled(_) => { // SIGKILL
+                        // nothing
+                    }
+                    _ => {
+                        println!("Error in killing.")
+                    }
+                }
+            }
+            Err(_) => {
+                // It is always "No such process"
+                // println!("{}", e);
+            }
+        }
     }
 }
