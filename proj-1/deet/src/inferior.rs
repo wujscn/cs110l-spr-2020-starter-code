@@ -6,6 +6,8 @@ use std::process::Child;
 use std::process::Command;
 use std::os::unix::process::CommandExt;
 
+use crate::dwarf_data::{DwarfData, Error as DwarfError};
+
 pub enum Status {
     /// Indicates inferior stopped. Contains the signal that stopped the process, as well as the
     /// current instruction pointer that it is stopped at.
@@ -82,6 +84,7 @@ impl Inferior {
     }
 
     /// Kill the existed process
+    /// I decide to ignore the error in it
     pub fn kill(&mut self) {
         match self.child.kill() {
             Ok(()) => {
@@ -102,5 +105,24 @@ impl Inferior {
                 // println!("{}", e);
             }
         }
+    }
+
+    ///
+    pub fn print_backtrace(&self, dwarf_data: &DwarfData) -> Result<(), nix::Error> {
+        let regs = ptrace::getregs(self.pid())?;
+        // println!("%rip register: {:#x}", regs.rip);
+        let mut instruction_ptr = regs.rip as usize;
+        let mut base_ptr = regs.rbp as usize;
+        loop {
+            let line = dwarf_data.get_line_from_addr(instruction_ptr).unwrap();
+            let func = dwarf_data.get_function_from_addr(instruction_ptr).unwrap();
+            println!("{} ({}:{})", func, line.file, line.number);
+            if func == "main" {
+                break;
+            }
+            instruction_ptr = ptrace::read(self.pid(), (base_ptr+8) as ptrace::AddressType)? as usize;
+            base_ptr = ptrace::read(self.pid(), base_ptr as ptrace::AddressType)? as usize;
+        } 
+        Ok(())
     }
 }
