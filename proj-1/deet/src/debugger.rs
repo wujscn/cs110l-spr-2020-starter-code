@@ -4,6 +4,7 @@ use crate::inferior::Inferior;
 use crate::inferior::Status;
 use crate::inferior::Breakpoint;
 use crate::dwarf_data::{DwarfData, Error as DwarfError};
+// use nix::sys::wait::WaitPidFlag;
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
 use std::collections::HashMap;
@@ -16,6 +17,7 @@ pub struct Debugger {
     dwarf_data: DwarfData,
     breakpoints: Vec<usize>,
     breakpoints_map: HashMap<usize, Breakpoint>,
+    stopped_rip: usize,
 }
 
 impl Debugger {
@@ -48,6 +50,7 @@ impl Debugger {
             dwarf_data: debug_data,
             breakpoints: Vec::new(),
             breakpoints_map: HashMap::new(),
+            stopped_rip: 0 as usize,
         }
     }
 
@@ -55,7 +58,7 @@ impl Debugger {
         loop {
             match self.get_next_command() {
                 DebuggerCommand::Run(args) => {
-                    if let Some(inferior) = Inferior::new(&self.target, &args, &self.breakpoints) {
+                    if let Some(inferior) = Inferior::new(&self.target, &args, &self.breakpoints, &mut self.breakpoints_map) {
                         // Check existed inferior and kill it
                         if self.inferior.is_some() {
                             self.inferior.as_mut().unwrap().kill();
@@ -69,12 +72,34 @@ impl Debugger {
                             Status::Exited(exit_code) => println!("Child exited (status {})", exit_code),
                             Status::Stopped(signal, rip) => {
                                 println!("Child stopped (signal {})", signal);
+                                // println!("rip: {:#x}", rip);
+                                self.stopped_rip = rip;
+                                let break_addr = rip - 1;
+                                if self.breakpoints_map.contains_key(&break_addr) {
+                                    // println!("It's a breakpoint!");
+                                    // restore the first byte of the instruction we replaced
+                                    let break_point = self.breakpoints_map.get(&break_addr).unwrap();
+                                    match infer.write_byte(break_addr, break_point.orig_byte) {
+                                        Ok(_) => {
+                                            // note that the returned orig_byte should be 0xcc
+                                        }
+                                        Err(e) => {
+                                            println!("Fail to continue from breakpoint at {:#x}: {}", break_addr, e);
+                                        }
+                                    }
+                                    // set %rip = %rip - 1 to rewind the instruction pointer
+                                    match infer.set_rip(rip-1) {
+                                        Ok(_) => {}
+                                        Err(e) => panic!("{}", e),
+                                    }
+                                    self.stopped_rip = rip-1;
+                                }
                                 match self.dwarf_data.get_line_from_addr(rip) {
                                     Some(line) => {
                                         println!("Stopped at {}:{}", line.file, line.number);
                                     },
                                     None => {}
-                                } 
+                                }              
                             },
                             Status::Signaled(_) => {
                                 // nothing
@@ -97,11 +122,67 @@ impl Debugger {
                         continue;
                     }
                     let infer = self.inferior.as_mut().unwrap();
+                    // check if inferior is stopped at a breakpoint
+                    if self.breakpoints_map.contains_key(&self.stopped_rip) {
+                        // println!("It's a breakpoint!");
+                        // go to next instruction
+                        match infer.step() {
+                            Ok(status) => {
+                                println!("step status :");
+                                match status {
+                                    Status::Exited(exit_code) => {
+                                        println!("Child exited (status {})", exit_code);
+                                        continue;
+                                    }
+                                    Status::Stopped(_, rip) => {
+                                        // restore 0xcc in the breakpoint location
+                                        match infer.write_byte(self.stopped_rip, 0xcc) {
+                                            Ok(_) => {
+                                                // should be the orig_byte we have saved
+                                            }
+                                            Err(e) => {
+                                                panic!("Reinstall breakpoint failed: {}", e);
+                                            }
+                                        }
+                                        self.stopped_rip = rip;
+                                    },
+                                    Status::Signaled(_) => {
+                                        // nothing
+                                    },
+                                }
+                            }
+                            Err(e) => {
+                                panic!("Exec step error {}", e);
+                            }
+                        }
+                    }
                     let status = infer.cont_exec().unwrap();
                     match status {
                         Status::Exited(exit_code) => println!("Child exited (status {})", exit_code),
                         Status::Stopped(signal, rip) => {
                             println!("Child stopped (signal {})", signal);
+                            // println!("rip: {:#x}", rip);
+                            self.stopped_rip = rip;
+                            let break_addr = rip - 1;
+                            if self.breakpoints_map.contains_key(&break_addr) {
+                                // println!("It's a breakpoint!");
+                                // restore the first byte of the instruction we replaced
+                                let break_point = self.breakpoints_map.get(&break_addr).unwrap();
+                                match infer.write_byte(break_addr, break_point.orig_byte) {
+                                    Ok(_) => {
+                                        // note that the returned orig_byte should be 0xcc
+                                    }
+                                    Err(e) => {
+                                        println!("Fail to continue from breakpoint at {:#x}: {}", break_addr, e);
+                                    }
+                                }
+                                // set %rip = %rip - 1 to rewind the instruction pointer
+                                match infer.set_rip(rip-1) {
+                                    Ok(_) => {}
+                                    Err(e) => panic!("{}", e),
+                                }
+                                self.stopped_rip = rip-1;
+                            }
                             match self.dwarf_data.get_line_from_addr(rip) {
                                 Some(line) => {
                                     println!("Stopped at {}:{}", line.file, line.number);
@@ -143,9 +224,9 @@ impl Debugger {
                         let decoded = usize::from_str_radix(addr_without_0x, 16);
                         match decoded {
                             Ok(addr) => {
+                                println!("Set breakpoint {} at {:#x}", self.breakpoints.len(), addr);
                                 self.breakpoints.push(addr);
                                 self.breakpoints_map.insert(addr, Breakpoint::new(addr, 0).unwrap());
-                                println!("Set breakpoint {} at {:#x}", self.breakpoints.len(), addr);
                             }
                             Err(e) => {
                                 println!("Given address error: {}", e);
