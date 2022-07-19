@@ -1,9 +1,12 @@
+
 use crate::debugger_command::DebuggerCommand;
 use crate::inferior::Inferior;
 use crate::inferior::Status;
+use crate::inferior::Breakpoint;
 use crate::dwarf_data::{DwarfData, Error as DwarfError};
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
+use std::collections::HashMap;
 
 pub struct Debugger {
     target: String,
@@ -11,6 +14,8 @@ pub struct Debugger {
     readline: Editor<()>,
     inferior: Option<Inferior>,
     dwarf_data: DwarfData,
+    breakpoints: Vec<usize>,
+    breakpoints_map: HashMap<usize, Breakpoint>,
 }
 
 impl Debugger {
@@ -32,12 +37,17 @@ impl Debugger {
         // Attempt to load history from ~/.deet_history if it exists
         let _ = readline.load_history(&history_path);
 
+        // debug
+        debug_data.print();
+
         Debugger {
             target: target.to_string(),
             history_path,
             readline,
             inferior: None,
             dwarf_data: debug_data,
+            breakpoints: Vec::new(),
+            breakpoints_map: HashMap::new(),
         }
     }
 
@@ -45,7 +55,7 @@ impl Debugger {
         loop {
             match self.get_next_command() {
                 DebuggerCommand::Run(args) => {
-                    if let Some(inferior) = Inferior::new(&self.target, &args) {
+                    if let Some(inferior) = Inferior::new(&self.target, &args, &self.breakpoints) {
                         // Check existed inferior and kill it
                         if self.inferior.is_some() {
                             self.inferior.as_mut().unwrap().kill();
@@ -114,6 +124,33 @@ impl Debugger {
                     match infer.print_backtrace(&self.dwarf_data) {
                         Ok(()) => {}
                         Err(e) => println!("{}", e),
+                    }
+                }
+                DebuggerCommand::Break(args) => {
+                    if args.len() != 1 {
+                        println!("invalid break targets");
+                        continue;
+                    }
+                    let token = &args[0];
+                    if token.starts_with("*") { // address mode
+                        let addr_str = &token[1..];
+                        // println!("{}", addr_str);
+                        let addr_without_0x = if addr_str.to_lowercase().starts_with("0x") {
+                            &addr_str[2..]
+                        } else {
+                            &addr_str
+                        };
+                        let decoded = usize::from_str_radix(addr_without_0x, 16);
+                        match decoded {
+                            Ok(addr) => {
+                                self.breakpoints.push(addr);
+                                self.breakpoints_map.insert(addr, Breakpoint::new(addr, 0).unwrap());
+                                println!("Set breakpoint {} at {:#x}", self.breakpoints.len(), addr);
+                            }
+                            Err(e) => {
+                                println!("Given address error: {}", e);
+                            }
+                        }
                     }
                 }
             }

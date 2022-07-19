@@ -5,8 +5,26 @@ use nix::unistd::Pid;
 use std::process::Child;
 use std::process::Command;
 use std::os::unix::process::CommandExt;
+use std::mem::size_of;
 
 use crate::dwarf_data::{DwarfData, Error as DwarfError};
+
+/// for writing breakpionts
+fn align_addr_to_word(addr: usize) -> usize {
+    addr & (-(size_of::<usize>() as isize) as usize)
+}
+
+#[derive(Clone)]
+pub struct Breakpoint {
+    addr: usize,
+    orig_byte: u8,
+}
+
+impl Breakpoint {
+    pub fn new(_addr: usize, _orig_byte: u8) -> Option<Breakpoint> {
+        Some(Breakpoint{addr: _addr, orig_byte: _orig_byte})
+    }
+}
 
 pub enum Status {
     /// Indicates inferior stopped. Contains the signal that stopped the process, as well as the
@@ -37,7 +55,7 @@ pub struct Inferior {
 impl Inferior {
     /// Attempts to start a new inferior process. Returns Some(Inferior) if successful, or None if
     /// an error is encountered.
-    pub fn new(target: &str, args: &Vec<String>) -> Option<Inferior> {
+    pub fn new(target: &str, args: &Vec<String>, breakpoints: &Vec<usize>) -> Option<Inferior> {
         let mut command = Command::new(target);
         command.args(args);
         unsafe {
@@ -45,6 +63,17 @@ impl Inferior {
         }
         let child = command.spawn().expect("Failed to spawn a subprocess");
         let pid = nix::unistd::Pid::from_raw(child.id() as i32);
+        let mut infer = Inferior{child};
+        // install breakpoints
+        for i in 0..breakpoints.len()-1 {
+            let addr = &breakpoints[i];
+            match infer.write_byte(*addr, 0xcc as u8) {
+                Ok(_) => {}
+                Err(e) => {
+                    println!("Fail to install Breakpoint {} at {:#x}: {}", i + 1, addr, e);
+                }
+            }
+        }
         // check SIGTRAP
         match waitpid(pid, None).ok()? {
             WaitStatus::Stopped(_, _) => {
@@ -55,7 +84,7 @@ impl Inferior {
                 return None
             },
         }
-        Some(Inferior{child})
+        Some(infer)
     }
 
     /// Returns the pid of this inferior.
@@ -124,5 +153,21 @@ impl Inferior {
             base_ptr = ptrace::read(self.pid(), base_ptr as ptrace::AddressType)? as usize;
         } 
         Ok(())
+    }
+
+    /// for writing breakpoints
+    fn write_byte(&mut self, addr: usize, val: u8) -> Result<u8, nix::Error> {
+        let aligned_addr = align_addr_to_word(addr);
+        let byte_offset = addr - aligned_addr;
+        let word = ptrace::read(self.pid(), aligned_addr as ptrace::AddressType)? as u64;
+        let orig_byte = (word >> 8 * byte_offset) & 0xff;
+        let masked_word = word & !(0xff << 8 * byte_offset);
+        let updated_word = masked_word | ((val as u64) << 8 * byte_offset);
+        ptrace::write(
+            self.pid(),
+            aligned_addr as ptrace::AddressType,
+            updated_word as *mut std::ffi::c_void,
+        )?;
+        Ok(orig_byte as u8)
     }
 }
