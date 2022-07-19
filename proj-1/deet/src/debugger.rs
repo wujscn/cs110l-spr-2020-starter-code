@@ -65,46 +65,7 @@ impl Debugger {
                         }
                         // Create the inferior
                         self.inferior = Some(inferior);
-                        // get a mutable reference
-                        let infer = self.inferior.as_mut().unwrap();
-                        let status = infer.cont_exec().unwrap();
-                        match status {
-                            Status::Exited(exit_code) => println!("Child exited (status {})", exit_code),
-                            Status::Stopped(signal, rip) => {
-                                println!("Child stopped (signal {})", signal);
-                                // println!("rip: {:#x}", rip);
-                                self.stopped_rip = rip;
-                                let break_addr = rip - 1;
-                                if self.breakpoints_map.contains_key(&break_addr) {
-                                    // println!("It's a breakpoint!");
-                                    // restore the first byte of the instruction we replaced
-                                    let break_point = self.breakpoints_map.get(&break_addr).unwrap();
-                                    match infer.write_byte(break_addr, break_point.orig_byte) {
-                                        Ok(_) => {
-                                            // note that the returned orig_byte should be 0xcc
-                                        }
-                                        Err(e) => {
-                                            println!("Fail to continue from breakpoint at {:#x}: {}", break_addr, e);
-                                        }
-                                    }
-                                    // set %rip = %rip - 1 to rewind the instruction pointer
-                                    match infer.set_rip(rip-1) {
-                                        Ok(_) => {}
-                                        Err(e) => panic!("{}", e),
-                                    }
-                                    self.stopped_rip = rip-1;
-                                }
-                                match self.dwarf_data.get_line_from_addr(rip) {
-                                    Some(line) => {
-                                        println!("Stopped at {}:{}", line.file, line.number);
-                                    },
-                                    None => {}
-                                }              
-                            },
-                            Status::Signaled(_) => {
-                                // nothing
-                            },
-                        };
+                        self.continue_exec();
                     } else {
                         println!("Error starting subprocess");
                     }
@@ -128,7 +89,6 @@ impl Debugger {
                         // go to next instruction
                         match infer.step() {
                             Ok(status) => {
-                                println!("step status :");
                                 match status {
                                     Status::Exited(exit_code) => {
                                         println!("Child exited (status {})", exit_code);
@@ -156,44 +116,7 @@ impl Debugger {
                             }
                         }
                     }
-                    let status = infer.cont_exec().unwrap();
-                    match status {
-                        Status::Exited(exit_code) => println!("Child exited (status {})", exit_code),
-                        Status::Stopped(signal, rip) => {
-                            println!("Child stopped (signal {})", signal);
-                            // println!("rip: {:#x}", rip);
-                            self.stopped_rip = rip;
-                            let break_addr = rip - 1;
-                            if self.breakpoints_map.contains_key(&break_addr) {
-                                // println!("It's a breakpoint!");
-                                // restore the first byte of the instruction we replaced
-                                let break_point = self.breakpoints_map.get(&break_addr).unwrap();
-                                match infer.write_byte(break_addr, break_point.orig_byte) {
-                                    Ok(_) => {
-                                        // note that the returned orig_byte should be 0xcc
-                                    }
-                                    Err(e) => {
-                                        println!("Fail to continue from breakpoint at {:#x}: {}", break_addr, e);
-                                    }
-                                }
-                                // set %rip = %rip - 1 to rewind the instruction pointer
-                                match infer.set_rip(rip-1) {
-                                    Ok(_) => {}
-                                    Err(e) => panic!("{}", e),
-                                }
-                                self.stopped_rip = rip-1;
-                            }
-                            match self.dwarf_data.get_line_from_addr(rip) {
-                                Some(line) => {
-                                    println!("Stopped at {}:{}", line.file, line.number);
-                                },
-                                None => {}
-                            }              
-                        },
-                        Status::Signaled(_) => {
-                            // nothing
-                        },
-                    };
+                    self.continue_exec();
                 }
                 DebuggerCommand::Backtrace => {
                     // check valid inferior
@@ -277,5 +200,52 @@ impl Debugger {
                 }
             }
         }
+    }
+
+    /// continue
+    /// using ptrace::cont
+    /// if inferior stopped at a breakpoint (i.e. (%rip - 1) matches a breakpoint address):
+    ///     restore the first byte of the instruction we replaced
+    ///     set %rip = %rip - 1 to rewind the instruction pointer
+    fn continue_exec(&mut self) {
+        let infer = self.inferior.as_mut().unwrap();
+        let status = infer.cont_exec().unwrap();
+        match status {
+            Status::Exited(exit_code) => println!("Child exited (status {})", exit_code),
+            Status::Stopped(signal, rip) => {
+                println!("Child stopped (signal {})", signal);
+                // println!("rip: {:#x}", rip);
+                self.stopped_rip = rip;
+                let break_addr = rip - 1;
+                if self.breakpoints_map.contains_key(&break_addr) {
+                    // println!("It's a breakpoint!");
+                    // restore the first byte of the instruction we replaced
+                    let break_point = self.breakpoints_map.get(&break_addr).unwrap();
+                    match infer.write_byte(break_addr, break_point.orig_byte) {
+                        Ok(_) => {
+                            // note that the returned orig_byte should be 0xcc
+                        }
+                        Err(e) => {
+                            println!("Fail to continue from breakpoint at {:#x}: {}", break_addr, e);
+                        }
+                    }
+                    // set %rip = %rip - 1 to rewind the instruction pointer
+                    match infer.set_rip(rip-1) {
+                        Ok(_) => {}
+                        Err(e) => panic!("{}", e),
+                    }
+                    self.stopped_rip = rip-1;
+                }
+                match self.dwarf_data.get_line_from_addr(rip) {
+                    Some(line) => {
+                        println!("Stopped at {}:{}", line.file, line.number);
+                    },
+                    None => {}
+                }              
+            },
+            Status::Signaled(_) => {
+                // nothing
+            },
+        };
     }
 }
