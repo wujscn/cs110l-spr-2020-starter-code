@@ -136,7 +136,7 @@ impl Debugger {
                         continue;
                     }
                     let token = &args[0];
-                    if token.starts_with("*") { // address mode
+                    if token.starts_with("*") { // raw address mode
                         let addr_str = &token[1..];
                         // println!("{}", addr_str);
                         let addr_without_0x = if addr_str.to_lowercase().starts_with("0x") {
@@ -155,7 +155,37 @@ impl Debugger {
                                 println!("Given address error: {}", e);
                             }
                         }
+                        continue; // stop setting
                     }
+                    // solve line number modes
+                    match token.parse::<usize>() {
+                        Ok(line_number) => {    // line number mode
+                            match self.dwarf_data.get_addr_for_line(None, line_number) {
+                                Some(addr) => {
+                                    println!("Set breakpoint {} at {:#x}", self.breakpoints.len(), addr);
+                                    self.breakpoints.push(addr);
+                                    self.breakpoints_map.insert(addr, Breakpoint::new(addr, 0).unwrap());
+                                }
+                                None => {
+                                    println!("No such line number {}", line_number);
+                                }
+                            }
+                            continue; // stop setting
+                        }
+                        Err(_) => {}
+                    }
+                    // solve name mode
+                    match self.dwarf_data.get_addr_for_function(None, token) {
+                        Some(addr) => {
+                            println!("Set breakpoint {} at {:#x}", self.breakpoints.len(), addr);
+                            self.breakpoints.push(addr);
+                            self.breakpoints_map.insert(addr, Breakpoint::new(addr, 0).unwrap());
+                            continue; // stop setting
+                        }
+                        None => {}
+                    }
+                    // unvalid token
+                    println!("Unvalid breakpoint!");
                 }
             }
         }

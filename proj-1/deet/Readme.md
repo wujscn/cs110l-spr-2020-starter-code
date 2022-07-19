@@ -7,7 +7,7 @@
 - [x] Milestone 4: Print stopped location
 - [x] Milestone 5: Setting breakpoints
 - [x] Milestone 6: Continuing from breakpoints
-- [ ] Milestone 7: Setting breakpoints on symbols
+- [x] Milestone 7: Setting breakpoints on symbols
 ## Optional extensions
 - [ ] Next line
 - [ ] Print source code on stop

@@ -71,7 +71,9 @@ impl Inferior {
             match infer.write_byte(*addr, 0xcc as u8) {
                 Ok(orig_byte) => {
                     let bp = bp_map.get_mut(&*addr).unwrap();
-                    bp.orig_byte = orig_byte;
+                    if orig_byte != 0xcc { // avoid same breakpoint bug
+                        bp.orig_byte = orig_byte;
+                    }
                 }
                 Err(e) => {
                     println!("Fail to install Breakpoint {} at {:#x}: {}", i + 1, addr, e);
