@@ -1,9 +1,12 @@
-use std::collections::VecDeque;
+use core::num;
+use std::{collections::VecDeque, thread::spawn};
 #[allow(unused_imports)]
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 #[allow(unused_imports)]
 use std::{env, process, thread};
+
+use num_cpus::get;
 
 /// Determines whether a number is prime. This function is taken from CS 110 factor.py.
 ///
@@ -69,14 +72,46 @@ fn get_input_numbers() -> VecDeque<u32> {
 fn main() {
     let num_threads = num_cpus::get();
     println!("Farm starting on {} CPUs", num_threads);
-    let start = Instant::now();
+    let mut start = Instant::now();
 
-    // TODO: call get_input_numbers() and store a queue of numbers to factor
+    // call get_input_numbers() and store a queue of numbers to factor
+    let input_nums = get_input_numbers();
 
-    // TODO: spawn `num_threads` threads, each of which pops numbers off the queue and calls
+    // for comparing
+    println!("[+] No thread:");
+    for num in input_nums.iter() {
+        factor_number(*num);
+    }
+    println!("Total execution time: {:?}", start.elapsed());
+    start = Instant::now();
+
+    println!("[+] Enable threads:");
+    let numbers = Arc::new(Mutex::new(input_nums));
+
+    // spawn `num_threads` threads, each of which pops numbers off the queue and calls
     // factor_number() until the queue is empty
+    let mut threads =  Vec::new();
+    for _ in 0..num_threads {
+        let q = numbers.clone();
+        threads.push(thread::spawn(move || {
+            loop {
+                let get_num = || -> Option<u32> {
+                    let mut q = q.lock().unwrap();
+                    q.pop_front()
+                };
+                if let Some(num) = get_num() {
+                    factor_number(num);
+                } else {
+                    break;
+                }
+            }
+        }))
+    }
 
-    // TODO: join all the threads you created
+    // join all the threads you created
+    for handle in threads {
+        handle.join().expect("Error occurred in thread");
+    }
 
     println!("Total execution time: {:?}", start.elapsed());
 }
